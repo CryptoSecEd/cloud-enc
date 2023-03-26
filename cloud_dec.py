@@ -4,6 +4,7 @@
 import sys
 
 from argparse import ArgumentParser
+from datetime import datetime
 from Cryptodome.Cipher import AES
 from ecies import encrypt, decrypt
 from getpass import getpass
@@ -34,7 +35,7 @@ def change_path(src, dst, rest):
 
 def dec_file(key, cipherfile, decfile):
     """Uses the private key to decrypt the file. The resulting plaintext
-    file has the same name as the original file with removed ".enc"
+    file has the same name as the original file with removed .enc/.enx
     extension.
 
     :param key: The private key needed to decrypt the file.
@@ -54,8 +55,10 @@ def dec_file(key, cipherfile, decfile):
 
     if str(decfile)[-4:] == ".enc":
         dec_filename = Path(str(decfile)[:-4])
+    elif str(decfile)[-4:] == ".enx":
+        dec_filename = Path(str(decfile)[:-4])
     else:
-        print(f"File does not end with .enc: {decfile}")
+        print(f"File does not end with .enc/.enx: {decfile}")
         sys.exit(1)
 
     if dec_filename.is_file():
@@ -72,18 +75,18 @@ def dec_file(key, cipherfile, decfile):
 
     if not dec_filename.parents[0].is_dir():
         Path(dec_filename.parents[0]).mkdir(parents=True, exist_ok=True)
-        print(f"Created folder: {dec_filename.parents[0]}")
+        # print(f"Created folder: {dec_filename.parents[0]}")
 
     with open(cipherfile, 'rb') as file_in:
         header = file_in.read(len(CENC_IDENTIFIER) + 1)
 
-        if header[:len(CENC_IDENTIFIER)] == b"cenc":
-            print("File has a CENC header, version number: %d"
-                  % header[len(CENC_IDENTIFIER)])
-        else:
+        if header[:len(CENC_IDENTIFIER)] != b"cenc":
             raise DecryptionError("File does not have a BoCA header, "
                                   + "cannot decrypt. Header: 0x%s"
                                   % header.hex())
+        # else:
+        #     print("File has a CENC header, version number: %d"
+        #           % header[len(CENC_IDENTIFIER)])
 
         # Get the length of the encrypted header containing the
         # encrypted symmetric key
@@ -122,7 +125,7 @@ def dec_file(key, cipherfile, decfile):
 
     aes_cipher.verify(aes_tag)
 
-    print("File successfully decrypted and verified (with symmetric key).")
+    # print("File successfully decrypted and verified (with symmetric key).")
     return dec_filename
 
 
@@ -134,8 +137,6 @@ def main():
     parser.add_argument("--dest", help="Location of the decrypted files",
                         type=str)
 
-    pri_key = getpass("Please enter the private decryption key: ")
-
     args = parser.parse_args()
     if not args.source:
         print("Please enter the location of the encrypted files with" +
@@ -145,7 +146,11 @@ def main():
         print("Please enter the location to save the decrypted files" +
               " with the --dest argument")
         sys.exit(1)
+
+    pri_key = getpass("Please enter the private decryption key: ")
     
+    print(f"Starting decrypting/restoring at {datetime.now()}")
+
     source = Path(args.source)
     dest = Path(args.dest)
 
@@ -173,10 +178,8 @@ def main():
         if not file.is_dir():
             dec_path = change_path(source, dest, file)
             retval = dec_file(pri_key, file, dec_path)
-            print(retval)
 
-
-
+    print(f"Finished decrypting/restoring at {datetime.now()}")
 
 if __name__ == "__main__":
     main()

@@ -14,6 +14,7 @@ import sys
 
 from argparse import ArgumentParser
 from Cryptodome.Cipher import AES
+from datetime import datetime
 from ecies import encrypt, decrypt
 from os import mkdir
 from pathlib import Path
@@ -23,7 +24,8 @@ from time import time
 
 AES_KEY_SIZE = 32       # 32 bytes = 256 bit key
 CIPHERBLOCK = 16
-EXPIRATION = 0.0001     # In days
+# EXPIRATION = 10.0/(24*60*60)
+EXPIRATION = 30         # In days
 EXPIRATION_SEC = EXPIRATION*24*60*60
 
 def change_path(src, dst, rest):
@@ -104,6 +106,14 @@ def enc_file(pubkey, plainfile, cipherfile):
                 plain_block = file_in.read(CIPHERBLOCK)
             tag = aes_cipher.digest()
             file_out.write(tag)
+
+    pending_file = Path(str(cipherfile)[:-1]+"x")
+    
+    # if the pending file exists, delete it
+    # Todo: Integrate this with the counts
+    if pending_file.is_file():
+        pending_file.unlink()
+
     if retval == "Updated":
         return retval
     else:
@@ -130,6 +140,8 @@ def main():
               " stored the --dest argument")
         sys.exit(1)
     
+    print(f"Starting encrypting/backing up at {datetime.now()}")
+
     source = Path(args.source)
     dest = Path(args.dest)
 
@@ -171,15 +183,47 @@ def main():
     print(f"Number of unchanged files (not encrypted): {exists_count}")
     print(f"Number of updated files re-encrypted: {updated_count}")
     
-    for cipherfile in dest.rglob("*"):
-        if not cipherfile.is_dir():
-            original_file = change_path(dest, source, cipherfile)
+    delete_count = 0
+    for cipher_file in dest.rglob("*"):
+        if not cipher_file.is_dir():
+            original_file = change_path(dest, source, cipher_file)
             original_file = Path(str(original_file)[:-4])
-            if not original_file.is_file():
-                if cipherfile.stat().st_mtime - (time() - EXPIRATION_SEC):
-                    print(f"Deleting {cipherfile}")
-                    cipherfile.unlink()
 
+            cipher_enc = Path(cipher_file.parent, f"{cipher_file.stem}.enc")
+            cipher_enx = Path(cipher_file.parent, f"{cipher_file.stem}.enx")
+
+            # All encrypted files should have either .enc or .enx
+            # extensions
+            if cipher_file.suffix not in (".enc", ".enx"):
+                print("Invalid extension for file in destination: " +
+                      {cipher_file})
+                exit(1)
+            # If the .enc file exists and the original does not, rename
+            # the .enc to enx and touch
+            if not original_file.is_file() and cipher_enc.is_file():
+                cipher_file.rename(cipher_enx)
+                cipher_enx.touch()
+
+            # If both .enc and .enx files exist, we keep the most recent
+            # file
+            elif cipher_enc.is_file() and cipher_enx.is_file():
+                if cipher_enx.stat().st_mtime > cipher_enc.stat().st_mtime:
+                    cipher_enc.unlink()
+                else:
+                    cipher_enx.unlink()
+                    cipher_enc.rename(cipher_enx)
+                    cipher_enx.touch()
+
+            # If the .enx file exists and the .enc file does not and
+            # the file is past expiration, then delete
+            elif cipher_enx.is_file() and not cipher_enc.is_file():
+                if cipher_file.stat().st_mtime - (time() - EXPIRATION_SEC):
+                    cipher_file.unlink()
+                    delete_count += 1
+
+    print(f"Number of deleted files: {delete_count}")
+
+    print(f"Finished encrypting/backing up at {datetime.now()}")
 
 
 if __name__ == "__main__":
