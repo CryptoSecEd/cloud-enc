@@ -217,7 +217,7 @@ def main():
             # If the .enx file exists and the .enc file does not and
             # the file is past expiration, then delete
             elif cipher_enx.is_file() and not cipher_enc.is_file():
-                if cipher_file.stat().st_mtime - (time() - EXPIRATION_SEC):
+                if cipher_file.stat().st_mtime < (time() - EXPIRATION_SEC):
                     cipher_file.unlink()
                     delete_count += 1
 
